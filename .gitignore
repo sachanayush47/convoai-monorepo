@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+env/
+venv/
+.venv/
+
+# Cache files
+*.cache
+*.pyo
+*.pyd
+*.whl
+*.egg
+*.egg-info/
+
+# Test result files
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Environment variables
+.env
+
+# Logs
+*.log
+*.out
+*.err
+
+# Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# FastAPI specific
+*.db
