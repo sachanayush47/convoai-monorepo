@@ -1,4 +1,6 @@
 import asyncio
+import string
+
 from openai import AsyncOpenAI
 
 from app.core.config import get_settings
@@ -7,6 +9,9 @@ settings = get_settings()
 
 
 class GroqLLM:
+    SPLITTERS = (".", ",", "?", "!", ";", ":", "—", "-")
+    PUNCTUATION = set(string.punctuation)
+    
     def __init__(self, output_queue):
         if settings.OPENAI_BASE_URL:
             self.client = AsyncOpenAI(base_url=settings.OPENAI_BASE_URL, api_key=settings.OPENAI_API_KEY)
@@ -17,15 +22,13 @@ class GroqLLM:
         self.sentence: str = ""
 
     def add_to_queue(self, text: str):
-        splitters = (".", ",", "?", "!", ";", ":", "—", "-")
+        stripped_text = text.strip()
+        self.sentence += text
         
-        if text.strip().endswith(splitters):
-            self.sentence += text
+        if stripped_text.endswith(GroqLLM.SPLITTERS):
             self.output_queue.put_nowait(self.sentence)
             self.sentence = ""
-        else:
-            self.sentence += text + " "
-    
+            
     async def generate_text(self, messages):
         
         response = await self.client.chat.completions.create(
