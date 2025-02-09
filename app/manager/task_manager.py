@@ -5,6 +5,7 @@ from app.llm.groq import GroqLLM
 from app.tts.elevenlabs import ElevenLabsTTS
 from app.transcriber.deepgram import DeepgramTranscriber
 from app.io_handler.ws import WebsocketIOHandler
+from app.lib.constants import DEFAULT_SYSTEM_PROMPT
 
 
 logger = logging.getLogger(__name__)
@@ -15,9 +16,9 @@ class TaskManager:
         self.response_id = 0
         
         self.audio_queue = asyncio.Queue()
-        self.stt_output_queue = asyncio.Queue()
+        self.transcriber_output_queue = asyncio.Queue()
         self.llm_output_queue = asyncio.Queue()
-        self.tts_output_queue = asyncio.Queue()
+        self.synthesizer_output_queue = asyncio.Queue()
         
         self.kwargs: dict = kwargs
         self.agent_config: dict = agent_config
@@ -28,10 +29,11 @@ class TaskManager:
         self.stt_task = None
         self.llm_task = None
         self.tts_task = None
+        self.tasks = []
         
         self.messages = [{
             "role": "system",
-            "content": "You are engaging in a realtime conversation with a human. Ouput short, concise messages to ensure a smooth conversation, preferably less than 50 characters."
+            "content": DEFAULT_SYSTEM_PROMPT
         }]
         
         self.is_callee_speaking = False
@@ -40,25 +42,26 @@ class TaskManager:
                 
     async def run(self):
         try:
-            llm = GroqLLM(self.stt_output_queue, self.llm_output_queue, self.messages)
-            transcriber = DeepgramTranscriber(self.audio_queue, self.stt_output_queue)
-            synthesizer = ElevenLabsTTS(self.llm_output_queue, self.tts_output_queue)
-            io_handler = WebsocketIOHandler(self.audio_queue, self.tts_output_queue, self.websocket, self.messages)
+            llm = GroqLLM(self.transcriber_output_queue, self.llm_output_queue, self.messages)
+            transcriber = DeepgramTranscriber(self.audio_queue, self.transcriber_output_queue)
+            synthesizer = ElevenLabsTTS(self.llm_output_queue, self.synthesizer_output_queue)
+            io_handler = WebsocketIOHandler(self.audio_queue, self.synthesizer_output_queue, self.websocket, self.messages)
             
-            await transcriber.establish_connection()
-            await synthesizer.establish_connection()
+            await asyncio.gather(transcriber.establish_connection(), synthesizer.establish_connection())
             
             self.io_task = asyncio.create_task(io_handler.run())
             self.stt_task = asyncio.create_task(transcriber.transcribe())
             self.llm_task = asyncio.create_task(llm.run())
             self.tts_task = asyncio.create_task(synthesizer.synthesize())
             
-            await asyncio.gather(self.io_task, self.stt_task, self.llm_task, self.tts_task)
+            self.tasks = [self.io_task, self.stt_task, self.llm_task, self.tts_task]
+            await asyncio.gather(*self.tasks)
         except Exception as e:
             logger.error(f"TASK MANAGER ERROR: {e}", exc_info=True)
             
     def cleanup(self):
-        self.llm_task.cancel()
-        self.io_task.cancel()
-        self.stt_task.cancel()
-        self.tts_task.cancel()
+        pass
+        # self.llm_task.cancel()
+        # self.io_task.cancel()
+        # self.stt_task.cancel()
+        # self.tts_task.cancel()

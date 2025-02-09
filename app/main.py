@@ -31,5 +31,5 @@ async def websocket_endpoint(websocket: WebSocket):
         await manager_task
     except WebSocketDisconnect:
         manager.cleanup()
-        manager_task.cancel()
+        # manager_task.cancel()
         logger.info("WebSocket connection closed")
