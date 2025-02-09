@@ -60,6 +60,24 @@ class ElevenLabsTTS:
                 logger.error(f"XI SENDER ERROR: {e}")
     
     async def receiver(self):
+        """
+        EXAMPLE RESPONSE:
+        {
+            "audio": "Y3VyaW91cyBtaW5kcyB0aGluayBhbGlrZSA6KQ==",
+            "isFinal": false,
+            "normalizedAlignment": {
+                "charStartTimesMs": [0, 3, 7, 9, 11, 12, 13, 15, 17, 19, 21],
+                "charDurationsMs": [3, 4, 2, 2, 1, 1, 2, 2, 2, 2, 3],
+                "chars": ["H", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"]
+            },
+            "alignment": {
+                "charStartTimesMs": [0, 3, 7, 9, 11, 12, 13, 15, 17, 19, 21],
+                "charDurationsMs": [3, 4, 2, 2, 1, 1, 2, 2, 2, 2, 3],
+                "chars": ["H", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d"]
+            }
+        }
+        """
+        
         while True:
             if self.is_call_ended:
                 break
@@ -69,8 +87,12 @@ class ElevenLabsTTS:
                 data: dict = json.loads(message)
                 if data.get("audio"):
                     logger.info(f"Received audio data: {len(data.get('audio'))} bytes")
-                    await self.output_queue.put(base64.b64decode(data["audio"]))
-                elif data.get('isFinal'):
+                    await self.output_queue.put({
+                        "audio": base64.b64decode(data.get("audio")),
+                        "text": "".join(data.get("alignment", {}).get("chars", [])),
+                        "duration": sum(data.get("alignment", {}).get("charDurationsMs", []))
+                    })
+                if data.get('isFinal'):
                     logger.info("Received isFinal")
             
             except Exception as e:

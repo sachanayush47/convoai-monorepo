@@ -62,16 +62,16 @@ class TaskManager:
             try:
                 text = await self.stt_output_queue.get()
                 logger.info(f"Received STT text: {text}")
-                # self.add_message({"role": "user", "content": text})
-                await llm.generate_text([{"role": "user", "content": text}])
+                self.add_message({"role": "user", "content": text})
+                await llm.generate_text(self.messages)
             except Exception as e:
                 logger.error(f"Error receiving STT text: {e}", exc_info=True)
                 
     async def stream(self):
         while True:
             try:
-                audio_data = await self.tts_output_queue.get()
-                await self.websocket.send_bytes(audio_data)
+                data = await self.tts_output_queue.get()
+                await self.websocket.send_bytes(data["audio"])
             except Exception as e:
                 logger.error(f"Error sending audio data: {e}", exc_info=True)
     
