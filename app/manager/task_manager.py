@@ -72,6 +72,7 @@ class TaskManager:
             try:
                 data = await self.tts_output_queue.get()
                 await self.websocket.send_bytes(data["audio"])
+                self.add_message({"role": "assistant", "content": data["text"]})
             except Exception as e:
                 logger.error(f"Error sending audio data: {e}", exc_info=True)
     

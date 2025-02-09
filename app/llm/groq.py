@@ -42,7 +42,7 @@ class GroqLLM:
             self.sentence = ""
             
     async def generate_text(self, messages):
-        logger.debug(f"Generating text for messages: {messages}")
+        logger.info(f"Generating text for messages: {messages}")
         
         response = await self.client.chat.completions.create(
             model="mixtral-8x7b-32768",
