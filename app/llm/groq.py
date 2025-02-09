@@ -5,6 +5,7 @@ import string
 from openai import AsyncOpenAI
 
 from app.core.config import get_settings
+from app.lib.utils import add_message
 
 
 settings = get_settings()
@@ -16,14 +17,16 @@ class GroqLLM:
     PUNCTUATION = set(string.punctuation)
     END_MARKER = "\0"  # Null byte as end marker
 
-    def __init__(self, output_queue):
+    def __init__(self, input_queue, output_queue, messages):
         if settings.OPENAI_BASE_URL:
             self.client = AsyncOpenAI(base_url=settings.OPENAI_BASE_URL, api_key=settings.OPENAI_API_KEY)
         else:
             self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
+        self.input_queue: asyncio.Queue = input_queue
         self.output_queue: asyncio.Queue = output_queue
         self.sentence: str = ""
+        self.messages: list = messages
 
     def add_to_queue(self, text: str):
         if text == GroqLLM.END_MARKER:
@@ -41,12 +44,12 @@ class GroqLLM:
             self.output_queue.put_nowait(self.sentence)
             self.sentence = ""
             
-    async def generate_text(self, messages):
-        logger.info(f"Generating text for messages: {messages}")
+    async def generate_text(self):
+        logger.info(f"Generating text for messages: {self.messages}")
         
         response = await self.client.chat.completions.create(
             model="mixtral-8x7b-32768",
-            messages=messages,
+            messages=self.messages,
             stream=True,
         )
         
@@ -58,3 +61,14 @@ class GroqLLM:
                     
         # Add null byte to indicate end of response
         self.add_to_queue(GroqLLM.END_MARKER)
+        
+    async def run(self):
+        while True:
+            try:
+                text = await self.input_queue.get()
+                logger.info(f"Transcribe user message: {text}")
+                add_message(self.messages, {"role": "user", "content": text})
+                await self.generate_text()
+            except Exception as e:
+                logger.error(f"GROQ LLM RUNNER ERROR: {e}", exc_info=True)
+        

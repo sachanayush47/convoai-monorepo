@@ -4,6 +4,7 @@ import logging
 from app.llm.groq import GroqLLM
 from app.tts.elevenlabs import ElevenLabsTTS
 from app.transcriber.deepgram import DeepgramTranscriber
+from app.io_handler.ws import WebsocketIOHandler
 
 
 logger = logging.getLogger(__name__)
@@ -23,80 +24,41 @@ class TaskManager:
         
         self.websocket = kwargs.get("websocket", None)
         
-        self.audio_task = None
+        self.io_task = None
         self.stt_task = None
         self.llm_task = None
         self.tts_task = None
-        self.stream_task = None
         
         self.messages = [{
             "role": "system",
-            "content": "Strictly, ouput in less than 5 words."
+            "content": "You are engaging in a realtime conversation with a human. Ouput short, concise messages to ensure a smooth conversation, preferably less than 50 characters."
         }]
         
         self.is_callee_speaking = False
         self.is_agent_speaking = False
         self.is_call_ended = False
-    
-    async def get_audio_bytes(self):
-        try:
-            while True:
-                data = await self.websocket.receive_bytes()
-                await self.audio_queue.put(data)
-        except Exception as e:
-            logger.error(f"Error receiving audio data: {e}", exc_info=True)
-    
-    def add_message(self, message):
-        if message is None:
-            return
-        
-        last_message = self.messages[-1]
-        
-        if message["role"] == last_message["role"]:
-            last_message["content"] += f" {message['content']}"
-        else:
-            self.messages.append(message)
-
-    async def generate_agent_response(self, llm: GroqLLM):
-        while True:
-            try:
-                text = await self.stt_output_queue.get()
-                logger.info(f"Received STT text: {text}")
-                self.add_message({"role": "user", "content": text})
-                await llm.generate_text(self.messages)
-            except Exception as e:
-                logger.error(f"Error receiving STT text: {e}", exc_info=True)
                 
-    async def stream(self):
-        while True:
-            try:
-                data = await self.tts_output_queue.get()
-                await self.websocket.send_bytes(data["audio"])
-                self.add_message({"role": "assistant", "content": data["text"]})
-            except Exception as e:
-                logger.error(f"Error sending audio data: {e}", exc_info=True)
-    
     async def run(self):
         try:
-            llm = GroqLLM(self.llm_output_queue)
-            dg_transcriber = DeepgramTranscriber(self.audio_queue, self.stt_output_queue)
-            tts = ElevenLabsTTS(self.llm_output_queue, self.tts_output_queue)
+            llm = GroqLLM(self.stt_output_queue, self.llm_output_queue, self.messages)
+            transcriber = DeepgramTranscriber(self.audio_queue, self.stt_output_queue)
+            synthesizer = ElevenLabsTTS(self.llm_output_queue, self.tts_output_queue)
+            io_handler = WebsocketIOHandler(self.audio_queue, self.tts_output_queue, self.websocket, self.messages)
             
-            await dg_transcriber.establish_connection()
-            await tts.establish_connection()
+            await transcriber.establish_connection()
+            await synthesizer.establish_connection()
             
-            self.audio_task = asyncio.create_task(self.get_audio_bytes())
-            self.stt_task = asyncio.create_task(dg_transcriber.transcribe())
-            self.llm_task = asyncio.create_task(self.generate_agent_response(llm))
-            self.tts_task = asyncio.create_task(tts.synthesize())
-            self.stream_task = asyncio.create_task(self.stream())
+            self.io_task = asyncio.create_task(io_handler.run())
+            self.stt_task = asyncio.create_task(transcriber.transcribe())
+            self.llm_task = asyncio.create_task(llm.run())
+            self.tts_task = asyncio.create_task(synthesizer.synthesize())
             
-            await asyncio.gather(self.audio_task, self.stt_task, self.llm_task, self.tts_task, self.stream_task)
+            await asyncio.gather(self.io_task, self.stt_task, self.llm_task, self.tts_task)
         except Exception as e:
-            logger.error(f"Error running task manager: {e}", exc_info=True)
+            logger.error(f"TASK MANAGER ERROR: {e}", exc_info=True)
             
     def cleanup(self):
         self.llm_task.cancel()
-        self.audio_task.cancel()
+        self.io_task.cancel()
         self.stt_task.cancel()
         self.tts_task.cancel()
