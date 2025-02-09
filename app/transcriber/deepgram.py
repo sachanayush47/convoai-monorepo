@@ -19,6 +19,10 @@ class DeepgramTranscriber:
         self.output_queue: asyncio.Queue = output_queue
         self.deepgram_ws = None
         self.sentence: str = ""
+        
+        self.sender_task = None
+        self.receiver_task = None
+        
         self.is_call_ended: bool = False
      
     def get_deepgram_ws_url(self):
@@ -83,7 +87,9 @@ class DeepgramTranscriber:
                 logger.error(f"DEEPGRAM RECEIVER ERROR: {e}")
             
     async def transcribe(self):
-        await asyncio.gather(self.sender(), self.receiver())
+        self.sender_task = asyncio.create_task(self.sender())
+        self.receiver_task = asyncio.create_task(self.receiver())
+        await asyncio.gather(self.sender_task, self.receiver_task)
     
     async def close_connection(self):
         self.is_call_ended = True
@@ -95,7 +101,18 @@ class DeepgramTranscriber:
             except Exception:
                 pass
             
-            self.deepgram_ws = None
-            logger.debug("DEEPGRAM WebSocket closed")
+            logger.info("Deepgram WebSocket closed")
         else:
-            logger.debug("DEEPGRAMS WebSocket already closed")
+            logger.info("Deepgram WebSocket already closed")
+        
+        try:
+            if self.sender_task:
+                self.sender_task.cancel()
+            if self.receiver_task:
+                self.receiver_task.cancel()
+        except Exception:
+            pass
+        
+        self.sender_task = None
+        self.receiver_task = None
+        self.deepgram_ws = None

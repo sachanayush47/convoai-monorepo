@@ -99,7 +99,9 @@ class ElevenLabsTTS:
                 logger.error(f"XI RECEIVER ERROR: {e}")    
                 
     async def synthesize(self):
-        await asyncio.gather(self.sender(), self.receiver())
+        self.sender_task = asyncio.create_task(self.sender())
+        self.receiver_task = asyncio.create_task(self.receiver())
+        await asyncio.gather(self.sender_task, self.receiver_task)
         
     async def close_connection(self):
         self.is_call_ended = True
@@ -112,6 +114,18 @@ class ElevenLabsTTS:
                 pass
             
             self.elevenlabs_ws = None 
-            logger.debug("XI WebSocket closed")
+            logger.info("XI WebSocket closed")
         else:
-            logger.debug("XI WebSocket already closed")
+            logger.info("XI WebSocket already closed")
+        
+        try:
+            if self.sender_task:
+                self.sender_task.cancel()
+            if self.receiver_task:
+                self.receiver_task.cancel()
+        except Exception:
+            pass
+            
+        self.sender_task = None
+        self.receiver_task = None
+        self.elevenlabs_ws = None

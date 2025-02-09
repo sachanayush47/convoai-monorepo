@@ -30,6 +30,7 @@ async def websocket_endpoint(websocket: WebSocket):
         manager_task = asyncio.create_task(manager.run())
         await manager_task
     except WebSocketDisconnect:
-        manager.cleanup()
-        # manager_task.cancel()
         logger.info("WebSocket connection closed")
+    finally:
+        await manager.cleanup()
+        logger.info("Task manager cleaned up")

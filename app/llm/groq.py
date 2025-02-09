@@ -71,4 +71,14 @@ class GroqLLM:
                 await self.generate_text()
             except Exception as e:
                 logger.error(f"GROQ LLM RUNNER ERROR: {e}", exc_info=True)
+    
+    async def close_connection(self):
+        self.sentence = ""
         
+        if self.client:
+            try:
+                await self.client.close()
+            except Exception:
+                pass
+            finally:
+                self.client = None

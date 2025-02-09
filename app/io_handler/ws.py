@@ -14,10 +14,18 @@ class WebsocketIOHandler:
         self.output_queue: asyncio.Queue = output_queue
         self.websocket: WebSocket = ws
         self.messages: list = messages
+        
+        self.sender_task = None
+        self.receiver_task = None
+        
+        self.is_call_ended = False
 
     async def sender(self):
         try:
             while True:
+                if self.is_call_ended:
+                    break
+                
                 data = await self.websocket.receive_bytes()
                 await self.input_queue.put(data)
         except Exception as e:
@@ -26,6 +34,9 @@ class WebsocketIOHandler:
     async def receiver(self):
         while True:
             try:
+                if self.is_call_ended:
+                    break
+                
                 data = await self.output_queue.get()
                 await self.websocket.send_bytes(data["audio"])
                 add_message(self.messages, {"role": "assistant", "content": data["text"]})
@@ -34,7 +45,29 @@ class WebsocketIOHandler:
                 
     async def run(self):
         try:
-            await asyncio.gather(self.sender(), self.receiver())
+            self.sender_task = asyncio.create_task(self.sender())
+            self.receiver_task = asyncio.create_task(self.receiver())
+            
+            await asyncio.gather(self.sender_task, self.receiver_task)
         except Exception as e:
             logger.error(f"WS HANDLER ERROR: {e}")
+            
+    async def close_connection(self):
+        self.is_call_ended = True
+        
+        try:
+            if self.sender_task:
+                self.sender_task.cancel()
+            if self.receiver_task:
+                self.receiver_task.cancel()
+            
+            await self.websocket.close()
+        except Exception as e:
+            pass
+        finally:
+            self.sender_task = None
+            self.receiver_task = None
+            self.websocket = None
+        
+        logger.info("WebSocket connection closed")
     
