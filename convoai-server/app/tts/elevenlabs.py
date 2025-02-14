@@ -21,6 +21,7 @@ class ElevenLabsTTS:
         self.model_id: str = kwargs.get("model_id", "eleven_flash_v2_5")
         self.inactivity_timeout: int = kwargs.get("inactivity_timeout", 180)
         self.elevenlabs_ws = None
+        self.call_status = kwargs["call_status"]
         self.is_call_ended = False
     
     def get_xi_ws_url(self):
@@ -90,7 +91,7 @@ class ElevenLabsTTS:
                     await self.output_queue.put({
                         "audio": base64.b64decode(data.get("audio")),
                         "text": "".join(data.get("alignment", {}).get("chars", [])),
-                        "duration": sum(data.get("alignment", {}).get("charDurationsMs", []))
+                        "duration_ms": sum(data.get("alignment", {}).get("charDurationsMs", [])),
                     })
                 if data.get('isFinal'):
                     logger.info("Received isFinal")

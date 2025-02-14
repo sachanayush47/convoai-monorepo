@@ -23,8 +23,13 @@ app = FastAPI()
 @app.websocket("/ws/chat/{agent_id}")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    
+    
+    agent_config = {
+        "max_call_duration_ms": 300000,
+    }
 
-    manager = TaskManager({}, websocket=websocket)
+    manager = TaskManager(agent_config, websocket=websocket)
     manager_task = None
     try:
         manager_task = asyncio.create_task(manager.run())

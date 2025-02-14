@@ -7,14 +7,13 @@ from app.transcriber.deepgram import DeepgramTranscriber
 from app.io_handler.ws import WebsocketIOHandler
 from app.lib.constants import DEFAULT_SYSTEM_PROMPT
 
+from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
 
 class TaskManager:
     def __init__(self, agent_config, **kwargs):
-        self.response_id = 0
-        
         self.audio_queue = asyncio.Queue()
         self.transcriber_output_queue = asyncio.Queue()
         self.llm_output_queue = asyncio.Queue()
@@ -23,7 +22,10 @@ class TaskManager:
         self.kwargs: dict = kwargs
         self.agent_config: dict = agent_config
         
-        self.websocket = kwargs.get("websocket", None)
+        # Auto end call if the call duration exceeds the maximum call duration. Default is 2 hours.
+        self.max_call_duration_ms: int = agent_config.get("max_call_duration_ms", 7200000)
+        
+        self.websocket: WebSocket = kwargs.get("websocket", None)
         
         self.io_handler = None
         self.llm = None
@@ -34,6 +36,7 @@ class TaskManager:
         self.stt_task = None
         self.llm_task = None
         self.tts_task = None
+        self.call_timeout_task = None
         self.tasks = []
         
         self.messages = [{
@@ -41,19 +44,31 @@ class TaskManager:
             "content": DEFAULT_SYSTEM_PROMPT
         }]
         
-        
         self.call_status = {
+            "response_id": 0,
             "is_callee_speaking": False,
             "is_agent_speaking": False,
             "is_call_ended": False
         }
-                
+        
+    async def end_call(self):
+        self.call_status["is_call_ended"] = True
+        self.call_status["is_agent_speaking"] = False
+        self.call_status["is_callee_speaking"] = False
+        await self.websocket.close()
+    
+    # End the call if the call duration exceeds the maximum call duration
+    async def end_call_on_timeout(self):
+        await asyncio.sleep(self.max_call_duration_ms / 1000)
+        await self.end_call()
+        logger.info(f"Maxium call duration reached. Call ended after {self.max_call_duration_ms / 1000}s.")
+
     async def run(self):
         try:
-            self.llm = GroqLLM(self.transcriber_output_queue, self.llm_output_queue, self.messages)
-            self.transcriber = DeepgramTranscriber(self.audio_queue, self.transcriber_output_queue)
-            self.synthesizer = ElevenLabsTTS(self.llm_output_queue, self.synthesizer_output_queue)
-            self.io_handler = WebsocketIOHandler(self.audio_queue, self.synthesizer_output_queue, self.websocket, self.messages)
+            self.io_handler = WebsocketIOHandler(self.audio_queue, self.synthesizer_output_queue, websocket=self.websocket, messages=self.messages, call_status=self.call_status)
+            self.transcriber = DeepgramTranscriber(self.audio_queue, self.transcriber_output_queue, call_status=self.call_status)
+            self.llm = GroqLLM(self.transcriber_output_queue, self.llm_output_queue, messages=self.messages, call_status=self.call_status)
+            self.synthesizer = ElevenLabsTTS(self.llm_output_queue, self.synthesizer_output_queue, call_status=self.call_status)
             
             await asyncio.gather(self.transcriber.establish_connection(), self.synthesizer.establish_connection())
             
@@ -61,8 +76,9 @@ class TaskManager:
             self.stt_task = asyncio.create_task(self.transcriber.transcribe())
             self.llm_task = asyncio.create_task(self.llm.run())
             self.tts_task = asyncio.create_task(self.synthesizer.synthesize())
+            self.call_timeout_task = asyncio.create_task(self.end_call_on_timeout())
 
-            self.tasks = [self.io_task, self.stt_task, self.llm_task, self.tts_task]
+            self.tasks = [self.io_task, self.stt_task, self.llm_task, self.tts_task, self.call_timeout_task]
             await asyncio.gather(*self.tasks)
         except Exception as e:
             logger.error(f"TASK MANAGER ERROR: {e}", exc_info=True)

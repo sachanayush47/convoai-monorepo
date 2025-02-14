@@ -23,6 +23,9 @@ class DeepgramTranscriber:
         self.sender_task = None
         self.receiver_task = None
         
+        self.call_status = kwargs["call_status"]
+        self.speech_final = False
+        
         self.is_call_ended: bool = False
      
     def get_deepgram_ws_url(self):
@@ -77,10 +80,17 @@ class DeepgramTranscriber:
                 
                 if transcript and transcript.strip() != "":
                     self.sentence += transcript
-                
+                    
+                    if self.speech_final:
+                        self.call_status = self.call_status["response_id"] + 1
+                        self.speech_final = False
+                        # Call interupt handler call back.
+                    
                 if data["speech_final"]:
                     if self.sentence.strip() != "":
                         await self.output_queue.put(self.sentence)
+                
+                    self.speech_final = True
                     
                     self.sentence = ""
             except Exception as e:

@@ -17,7 +17,7 @@ class GroqLLM:
     PUNCTUATION = set(string.punctuation)
     END_MARKER = "\0"  # Null byte as end marker
 
-    def __init__(self, input_queue, output_queue, messages):
+    def __init__(self, input_queue, output_queue, **kwargs):
         if settings.OPENAI_BASE_URL:
             self.client = AsyncOpenAI(base_url=settings.OPENAI_BASE_URL, api_key=settings.OPENAI_API_KEY)
         else:
@@ -26,7 +26,9 @@ class GroqLLM:
         self.input_queue: asyncio.Queue = input_queue
         self.output_queue: asyncio.Queue = output_queue
         self.sentence: str = ""
-        self.messages: list = messages
+        self.messages: list = kwargs["messages"]
+        
+
 
     def add_to_queue(self, text: str):
         if text == GroqLLM.END_MARKER:
